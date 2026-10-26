@@ -6,7 +6,7 @@ LIBAMOS_ZBESH_PATH = ./amos/zbesh/
 LIBITERATIVE_PATH = ./iterative/
 WORKING_DIR_PATH =  $(PWD)
 
-.PHONY: test_frob_blocks test_warm_start
+.PHONY: test_frob_blocks test_warm_start testRHSCache
 
 ifndef LIBLAPACK
   LIBLAPACK:=-lLOCAL_LAPACK
@@ -15,7 +15,7 @@ endif
 OBJECTS_LIBMOM = triangle_int_FS.o V_E_V_H_dipole.o V_E_V_H_plane.o integr_1D_X_W.o GL.o Z_EJ_Z_HJ_FS_triangles_arrays.o GK_triangle.o mesh.o readWriteBlitzArrayFromFile.o
 OBJECTS_LIBMLFMA = triangle_int_FS.o V_E_V_H_dipole.o V_E_V_H_plane.o integr_1D_X_W.o GL.o GK_triangle.o mesh.o readWriteBlitzArrayFromFile.o interpolation.o cube.o level.o octtree.o
 
-all: libs mpi_mlfma testMPI
+all: libs mpi_mlfma testMPI testRHSCache
 
 test_frob_blocks: test_frob_blocks.cpp frob_blocks.h
 	$(CC) $(filter-out -c,$(CFLAGS)) test_frob_blocks.cpp -o test_frob_blocks
@@ -27,6 +27,9 @@ test_warm_start: test_warm_start.cpp warm_start.h
 
 testMPI: testMPI.o
 	$(MPICC) $(INCLUDE_PATH) testMPI.o $(LIB_SEARCH_PATH) -lblitz -lm -o testMPI
+
+testRHSCache: testRHSCache.o
+	$(MPICC) $(INCLUDE_PATH) testRHSCache.o $(LIB_SEARCH_PATH) -lblitz -lm -o testRHSCache
 
 communicateZnearBlocks: communicateZnearBlocks.o readWriteBlitzArrayFromFile.o
 	$(MPICC) $(INCLUDE_PATH) communicateZnearBlocks.o readWriteBlitzArrayFromFile.o $(LIB_SEARCH_PATH) -lblitz -lm -o communicateZnearBlocks
@@ -75,6 +78,8 @@ libLOCAL_LAPACK:
 
 testMPI.o: testMPI.cpp
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) testMPI.cpp
+testRHSCache.o: testRHSCache.cpp rhs_cache.h
+	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) testRHSCache.cpp
 communicateZnearBlocks.o: communicateZnearBlocks.cpp readWriteBlitzArrayFromFile.h
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) communicateZnearBlocks.cpp
 RWGs_renumbering.o: RWGs_renumbering.cpp readWriteBlitzArrayFromFile.h
@@ -85,7 +90,7 @@ compute_Z_near.o: compute_Z_near.cpp readWriteBlitzArrayFromFile.h Z_EJ_Z_HJ.h s
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) compute_Z_near.cpp
 compute_SAI_precond.o: compute_SAI_precond.cpp readWriteBlitzArrayFromFile.h
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) compute_SAI_precond.cpp
-mpi_mlfma.o: mpi_mlfma.cpp  Z_sparse_MLFMA.h mesh.h octtree.h octtree.cpp level.h level.cpp ./iterative/iterative.h V_E_V_H.h alpha_computation.h V_E_V_H_dipole.cpp V_E_V_H_plane.cpp EMConstants.h warm_start.h
+mpi_mlfma.o: mpi_mlfma.cpp rhs_cache.h Z_sparse_MLFMA.h mesh.h octtree.h octtree.cpp level.h level.cpp ./iterative/iterative.h V_E_V_H.h alpha_computation.h V_E_V_H_dipole.cpp V_E_V_H_plane.cpp EMConstants.h warm_start.h
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) mpi_mlfma.cpp
 distribute_Z_cubes.o: distribute_Z_cubes.cpp octtree.h octtree.cpp level.h level.cpp EMConstants.h
 	$(MPICC) $(INCLUDE_PATH) $(CFLAGS) distribute_Z_cubes.cpp
@@ -125,8 +130,7 @@ GL.o: GL.cpp
 
 
 clean:
-	rm -f *.o *.a *.txt *~ *.pyc octtree mpi_mlfma testMPI test_frob_blocks test_warm_start communicateZnearBlocks mesh_functions_seb mesh_cubes distribute_Z_cubes RWGs_renumbering compute_Z_near compute_SAI_precond;
+	rm -f *.o *.a *.txt *~ *.pyc octtree mpi_mlfma testMPI testRHSCache test_frob_blocks test_warm_start communicateZnearBlocks mesh_functions_seb mesh_cubes distribute_Z_cubes RWGs_renumbering compute_Z_near compute_SAI_precond;
 	cd $(LIBAMOS_ZBESH_PATH); make clean;
 	cd $(LIBZGELS_PATH); make clean;
 	cd $(LIBITERATIVE_PATH); make clean;
-
