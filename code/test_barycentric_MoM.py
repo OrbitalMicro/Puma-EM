@@ -55,10 +55,10 @@ class Target_MoM:
 
     def solveByLUdecomposition(self):
         print("LU decomposition and solution...")
-        t0 = time.clock()
+        t0 = time.process_time()
         lu, piv = linalg.lu_factor(self.Z_CFIE_J)
         self.I_CFIE = linalg.lu_solve((lu, piv), self.V_CFIE)
-        print("Done. time =", time.clock() - t0, "seconds")
+        print("Done. time =", time.process_time() - t0, "seconds")
 
 
 def itercount(residual):
@@ -135,23 +135,23 @@ if __name__=="__main__":
     divided_triangles_vertexes, MAX_V = divide_triangles(target_mesh.RWGNumber_signedTriangles, target_mesh.RWGNumber_edgeVertexes, target_mesh.triangle_vertexes, target_mesh.vertexes_coord)
     target_mesh_bary.vertexes_coord, target_mesh_bary.triangle_vertexes = create_barycentric_triangles(divided_triangles_vertexes, target_mesh.vertexes_coord, MAX_V)
 
-    #t0 = time.clock()
+    #t0 = time.process_time()
     edgeNumber_vertexes, edgeNumber_triangles, triangle_adjacentTriangles, is_triangle_adjacentTriangles_via_junction = edges_computation(target_mesh_bary.triangle_vertexes, target_mesh_bary.vertexes_coord)
     #print(is_triangle_adjacentTriangles_via_junction)
-    #time_edges_classification = time.clock()-t0
+    #time_edges_classification = time.process_time()-t0
     #print("  edges classification cumulated time = " + str(time_edges_classification) + " seconds")
 
     #print("  reordering triangles for normals coherency...")
     #sys.stdout.flush()
-    #t0 = time.clock()
+    #t0 = time.process_time()
     target_mesh_bary.triangles_surfaces = reorder_triangle_vertexes(triangle_adjacentTriangles, is_triangle_adjacentTriangles_via_junction, target_mesh_bary.triangle_vertexes, target_mesh_bary.vertexes_coord)
     target_mesh_bary.S = max(target_mesh_bary.triangles_surfaces)+1
-    #time_reordering_normals = time.clock()-t0
+    #time_reordering_normals = time.process_time()-t0
     #print("  cumulated time = " + str(time_reordering_normals) + " seconds")
 
     #print("  checking the closed and open surfaces...")
     #sys.stdout.flush()
-    #t0 = time.clock()
+    #t0 = time.process_time()
     target_mesh_bary.IS_CLOSED_SURFACE, target_mesh_bary.connected_surfaces, target_mesh_bary.potential_closed_surfaces = is_surface_closed(target_mesh_bary.triangles_surfaces, edgeNumber_triangles)
     print("  test of the closed surfaces : " + str(target_mesh_bary.IS_CLOSED_SURFACE))
     print("  connected surfaces : " + str(target_mesh_bary.connected_surfaces))
@@ -159,12 +159,12 @@ if __name__=="__main__":
 
     #print("  computing the effective RWG functions and their opposite vertexes...")
     #sys.stdout.flush()
-    #t0 = time.clock()
+    #t0 = time.process_time()
     target_mesh_bary.RWGNumber_signedTriangles, target_mesh_bary.RWGNumber_edgeVertexes, target_mesh_bary.N_edges, target_mesh_bary.N_RWG = RWGNumber_signedTriangles_computation(edgeNumber_triangles, edgeNumber_vertexes, target_mesh_bary.triangles_surfaces, target_mesh_bary.IS_CLOSED_SURFACE, target_mesh_bary.triangle_vertexes, target_mesh_bary.vertexes_coord)
     del edgeNumber_vertexes
     target_mesh_bary.RWGNumber_oppVertexes = RWGNumber_oppVertexes_computation(target_mesh_bary.RWGNumber_signedTriangles, target_mesh_bary.RWGNumber_edgeVertexes, target_mesh_bary.triangle_vertexes)
     ## memory-economic way for computing average_RWG_length
-    #time_effective_RWG_functions_computation =  time.clock() - t0
+    #time_effective_RWG_functions_computation =  time.process_time() - t0
     #print("  effective RWG functions computation cumulated time = " + str(time_effective_RWG_functions_computation))
     print("  Number of edges = " + str(target_mesh_bary.N_edges))
     print("  Number of RWG = " + str(target_mesh_bary.N_RWG))

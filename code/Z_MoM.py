@@ -118,7 +118,7 @@ if __name__=="__main__":
     list_of_src_edges_numbers = arange(N_RWG).astype('i')
     CFIE = array([0, 0, 0, 1], 'D')
     signSurfObs, signSurfSrc = 1.0, 1.0
-    t0 = time.clock()
+    t0 = time.process_time()
     MOM_FULL_PRECISION = 1
     Z_CFIE_J, Z_CFIE_M = Z_CFIE_MoM(CFIE, list_of_test_edges_numbers, list_of_src_edges_numbers, target_mesh.RWGNumber_CFIE_OK, target_mesh.RWGNumber_M_CURRENT_OK, target_mesh.RWGNumber_signedTriangles, target_mesh.RWGNumber_edgeVertexes, target_mesh.RWGNumber_oppVertexes, target_mesh.vertexes_coord, w, eps_r, mu_r, signSurfObs, signSurfSrc, TDS_APPROX, Z_s, MOM_FULL_PRECISION)
 
@@ -131,5 +131,5 @@ if __name__=="__main__":
                 f.write(" ")
             f.write("\n")
         f.close()
-    print("time =", time.clock() - t0)
+    print("time =", time.process_time() - t0)
 

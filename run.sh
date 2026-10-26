@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 DIR=$(dirname $(readlink -f $0))
 
@@ -98,7 +99,7 @@ ${PYTHON_CMD} code/RCS_MLFMA.py --inputdir ${INPUT_DIR} --simudir ${SIMU_DIR}
 cp -r ${SIMU_DIR}/tmp0/iterative_data ${RESULT_DIR}
 cp -r ${SIMU_DIR}/tmp0/octtree_data/big_cube_center_coord.txt ${RESULT_DIR}
 cp -r ${SIMU_DIR}/result/* ${RESULT_DIR}
-cp -r ${SIMU_DIR}/geo/*.geo ${RESULT_DIR}
+cp -r ${SIMU_DIR}/geo/*.geo ${RESULT_DIR} 2>/dev/null || true
 rm -rf ${SIMU_DIR} GMSHcommand.sh
 
 # echo " "

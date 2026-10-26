@@ -21,27 +21,27 @@ libs:
 		make compute_Z_near; \
 		make compute_SAI_precond;
 communicateZnearBlocks:
-	make - C $(PROGR_DIR_PATH)/MoM communicateZnearBlocks;
+	make -C $(PROGR_DIR_PATH)/MoM communicateZnearBlocks;
 mpi_mlfma:
-	make - C $(PROGR_DIR_PATH)/MoM mpi_mlfma;
+	make -C $(PROGR_DIR_PATH)/MoM mpi_mlfma;
 distribute_Z_cubes:
-	make - C $(PROGR_DIR_PATH)/MoM distribute_Z_cubes;
+	make -C $(PROGR_DIR_PATH)/MoM distribute_Z_cubes;
 RWGs_renumbering:
-	make - C $(PROGR_DIR_PATH)/MoM RWGs_renumbering;
+	make -C $(PROGR_DIR_PATH)/MoM RWGs_renumbering;
 compute_Z_near:
-	make - C $(PROGR_DIR_PATH)/MoM compute_Z_near;
+	make -C $(PROGR_DIR_PATH)/MoM compute_Z_near;
 compute_SAI_precond:
-	make - C $(PROGR_DIR_PATH)/MoM compute_SAI_precond;
+	make -C $(PROGR_DIR_PATH)/MoM compute_SAI_precond;
 mesh_functions_seb:
-	make - C $(PROGR_DIR_PATH)/MoM mesh_functions_seb;
+	make -C $(PROGR_DIR_PATH)/MoM mesh_functions_seb;
 mesh_cubes:
-	make - C $(PROGR_DIR_PATH)/MoM mesh_cubes;
+	make -C $(PROGR_DIR_PATH)/MoM mesh_cubes;
 documentation:
 	make -C doc documentation;
 clean:
 	rm -rf *~ *.pyc *.txt *.out *.tar *.gz *.tgz MPIcommand.sh GMSHcommand.sh __pycache__;
 	cd run_in_out; rm -rf *~ *.pyc __pycache__;
-	make - C $(PROGR_DIR_PATH) clean;
+	make -C $(PROGR_DIR_PATH) clean;
 	make -C geo clean;
 	make -C installScripts clean;
 	make -C doc clean;

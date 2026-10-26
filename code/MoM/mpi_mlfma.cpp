@@ -450,7 +450,7 @@ void computeForOneExcitation(Octtree & octtree,
       //}
       blitz::Array<std::complex<float>, 1> V_CFIE_tmp;
       const char CURRENT_TYPE = 'M';
-      local_V_CFIE_dipole_array (V_CFIE_tmp, J_dip, r_J_dip, local_target_mesh, w, eps_r, mu_r, octtree.CFIE, CURRENT_TYPE, V_FULL_PRECISION);
+      local_V_CFIE_dipole_array (V_CFIE_tmp, M_dip, r_M_dip, local_target_mesh, w, eps_r, mu_r, octtree.CFIE, CURRENT_TYPE, V_FULL_PRECISION);
       V_CFIE += V_CFIE_tmp;
     }
   }

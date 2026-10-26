@@ -60,17 +60,17 @@ class Target_MoM:
 
     def solveByLUdecomposition(self):
         print("LU decomposition and solution...")
-        t0 = time.clock()
+        t0 = time.process_time()
         lu, piv = linalg.lu_factor(self.Z_CFIE_J)
         self.I_CFIE = linalg.lu_solve((lu, piv), self.V_CFIE)
-        print("Done. time =", time.clock() - t0, "seconds")
+        print("Done. time =", time.process_time() - t0, "seconds")
 
 class dielectricTarget_MoM:
     def __init__(self, CFIE_coeff, TENETHNH, list_of_test_edges_numbers, list_of_src_edges_numbers, target_mesh, w, eps_r_out, mu_r_out, eps_r_in, mu_r_in, MOM_FULL_PRECISION, FORMULATION):
         self.numberOfMedia = sum(target_mesh.IS_CLOSED_SURFACE) + 1
         print("MOM.py: number of possible media =", self.numberOfMedia)
         print("Target_MoM instanciation...")
-        t0 = time.clock()
+        t0 = time.process_time()
         TDS_APPROX, Z_s = 0, 0.0 + 0.0j
         N_J, N_M = len(list_of_test_edges_numbers), len(list_of_test_edges_numbers)
         self.Z = zeros((N_J + N_M, N_J + N_M), 'D')
@@ -141,7 +141,7 @@ class dielectricTarget_MoM:
             print("use another formulation please. Error.")
             sys.exit(1)
 
-        print("Done. time =", time.clock() - t0, "seconds")
+        print("Done. time =", time.process_time() - t0, "seconds")
         self.iter_counter = 0
     # functions
     def matvec(self, x):
@@ -201,17 +201,17 @@ class dielectricTarget_MoM:
 
     def solveByInversion(self):
         print("Matrix inversion...")
-        t0 = time.clock()
+        t0 = time.process_time()
         self.compute_Y()
-        print("Done. time =", time.clock() - t0, "seconds")
+        print("Done. time =", time.process_time() - t0, "seconds")
         self.I = dot(self.Y, self.V)
 
     def solveByLUdecomposition(self):
         print("LU decomposition and solution...")
-        t0 = time.clock()
+        t0 = time.process_time()
         lu, piv = linalg.lu_factor(self.Z)
         self.I = linalg.lu_solve((lu, piv), self.V)
-        print("Done. time =", time.clock() - t0, "seconds")
+        print("Done. time =", time.process_time() - t0, "seconds")
 
 def itercount(residual):
     global count

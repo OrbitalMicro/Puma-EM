@@ -43,7 +43,7 @@ class MeshClass:
         sys.stdout.flush()
 
         print("  reading " +  os.path.join(self.path, self.name) + "...")
-        t0 = time.clock()
+        t0 = time.process_time()
         if self.meshFormat == 'GMSH':
             #self.vertexes_coord, self.triangle_vertexes, self.triangles_physicalSurface = read_mesh_GMSH_1(os.path.join(self.path, self.name), self.targetDimensions_scaling_factor, self.z_offset)
             self.vertexes_coord, self.triangle_vertexes, self.triangles_physicalSurface = read_mesh_GMSH_2(os.path.join(self.path, self.name), self.targetDimensions_scaling_factor, self.z_offset)
@@ -53,7 +53,7 @@ class MeshClass:
             self.vertexes_coord, self.triangle_vertexes, self.triangles_physicalSurface = read_mesh_ANSYS(self.path, self.name, self.targetDimensions_scaling_factor, self.z_offset)
         else:
             print("meshClass.py : error on the mesh format. Enter a correct one please.")
-        self.time_reading = time.clock()-t0
+        self.time_reading = time.process_time()-t0
         print("reading mesh time = " + str(self.time_reading) + " seconds")
         self.T = self.triangle_vertexes.shape[0]
         print("  number of triangles = " + str(self.T))
@@ -61,7 +61,7 @@ class MeshClass:
         sys.stdout.flush()
 
         if self.languageForMeshConstruction=="C" or self.languageForMeshConstruction=="C++":
-            t0 = time.clock()
+            t0 = time.process_time()
             #self.triangles_surfaces, self.IS_CLOSED_SURFACE, self.RWGNumber_signedTriangles, self.RWGNumber_edgeVertexes, self.RWGNumber_oppVertexes = edges_computation_C_old(self.triangle_vertexes, self.vertexes_coord, self.path)
             self.triangles_surfaces, self.IS_CLOSED_SURFACE, self.RWGNumber_signedTriangles, self.RWGNumber_edgeVertexes, self.RWGNumber_oppVertexes, self.triangle_vertexes = edges_computation_C(self.triangle_vertexes, self.vertexes_coord, self.path)
             self.N_RWG = self.RWGNumber_edgeVertexes.shape[0]
@@ -73,28 +73,28 @@ class MeshClass:
                     # if the RWG is part of the delta gap. That function would use vertexes_coord and
                     # self.RWGNumber_edgeVertexes as inputs.
                     pass
-            self.time_edges_classification = time.clock()-t0
+            self.time_edges_classification = time.process_time()-t0
             print("  edges classification cumulated time = " + str(self.time_edges_classification) + " seconds")
             self.time_effective_RWG_functions_computation = self.time_edges_classification
             print("    Number of RWG = " + str(self.N_RWG))
 
         else:
-            t0 = time.clock()
+            t0 = time.process_time()
             edgeNumber_vertexes, edgeNumber_triangles, triangle_adjacentTriangles, is_triangle_adjacentTriangles_via_junction = edges_computation(self.triangle_vertexes, self.vertexes_coord)
-            self.time_edges_classification = time.clock()-t0
+            self.time_edges_classification = time.process_time()-t0
             print("  edges classification cumulated time = " + str(self.time_edges_classification) + " seconds")
 
             print("  reordering triangles for normals coherency...")
             sys.stdout.flush()
-            t0 = time.clock()
+            t0 = time.process_time()
             self.triangles_surfaces = reorder_triangle_vertexes(triangle_adjacentTriangles, is_triangle_adjacentTriangles_via_junction, self.triangle_vertexes, self.vertexes_coord)
             self.S = max(self.triangles_surfaces)+1
-            self.time_reordering_normals = time.clock()-t0
+            self.time_reordering_normals = time.process_time()-t0
             print("  cumulated time = " + str(self.time_reordering_normals) + " seconds")
 
             print("  checking the closed and open surfaces...")
             sys.stdout.flush()
-            t0 = time.clock()
+            t0 = time.process_time()
             self.IS_CLOSED_SURFACE, self.connected_surfaces, self.potential_closed_surfaces = is_surface_closed(self.triangles_surfaces, edgeNumber_triangles)
             print("  test of the closed surfaces : " + str(self.IS_CLOSED_SURFACE))
             print("  connected surfaces : " + str(self.connected_surfaces))
@@ -102,12 +102,12 @@ class MeshClass:
 
             print("  computing the effective RWG functions and their opposite vertexes...")
             sys.stdout.flush()
-            t0 = time.clock()
+            t0 = time.process_time()
             self.RWGNumber_signedTriangles, self.RWGNumber_edgeVertexes, self.N_edges, self.N_RWG = RWGNumber_signedTriangles_computation(edgeNumber_triangles, edgeNumber_vertexes, self.triangles_surfaces, self.IS_CLOSED_SURFACE, self.triangle_vertexes, self.vertexes_coord)
             del edgeNumber_vertexes
             self.RWGNumber_oppVertexes = RWGNumber_oppVertexes_computation(self.RWGNumber_signedTriangles, self.RWGNumber_edgeVertexes, self.triangle_vertexes)
             # memory-economic way for computing average_RWG_length
-            self.time_effective_RWG_functions_computation =  time.clock() - t0
+            self.time_effective_RWG_functions_computation =  time.process_time() - t0
             print("  effective RWG functions computation cumulated time = " + str(self.time_effective_RWG_functions_computation))
             print("  Number of edges = " + str(self.N_edges))
             print("  Number of RWG = " + str(self.N_RWG))
@@ -142,10 +142,10 @@ class MeshClass:
         print("writing normals to a file")
         name = 'normals.pos'
         print("triangles_areas and triangles_normals computation...")
-        t0 = time.clock()
+        t0 = time.process_time()
         triangles_centroids = triangles_centroids_computation(self.vertexes_coord, self.triangle_vertexes)
         triangles_areas, triangles_normals = triangles_areas_normals_computation(self.vertexes_coord, self.triangle_vertexes, self.triangles_surfaces)
-        self.time_triangles_normals_comp = time.clock()-t0
+        self.time_triangles_normals_comp = time.process_time()-t0
         print("time = " + str(self.time_triangles_normals_comp) + " seconds")
         write_normals(os.path.join(self.path, name), triangles_centroids, triangles_normals, self.triangles_surfaces, -1)
 

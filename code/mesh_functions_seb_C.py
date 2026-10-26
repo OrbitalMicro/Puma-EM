@@ -34,7 +34,7 @@ def edges_computation_C(triangle_vertexes, vertexes_coord, saveDir):
     # 1) the entire part formed by the numbers of the first column
     # 2) the decimal part formed by the numbers of the second column
 
-    t10 = time.clock()
+    t10 = time.process_time()
     print("    construction of edgeNumber_triangles...")
     sys.stdout.flush()
     T = triangle_vertexes.shape[0]
@@ -46,7 +46,7 @@ def edges_computation_C(triangle_vertexes, vertexes_coord, saveDir):
 
     print(commands.getoutput("./code/MoM/mesh_functions_seb " + saveDir + "/"))
 
-    print("time C++ execution = " + str(time.clock() - t10))
+    print("time C++ execution = " + str(time.process_time() - t10))
     N_RWG = readIntFromDisk(os.path.join(saveDir, "N_RWG.txt"))
     reordered_triangle_vertexes = readBlitzArrayFromDisk(os.path.join(saveDir, "triangle_vertexes.txt"), T, 3, 'i')
     RWGNumber_signedTriangles = readBlitzArrayFromDisk(os.path.join(saveDir, "RWGNumber_signedTriangles.txt"), N_RWG, 2, 'i')
@@ -54,7 +54,7 @@ def edges_computation_C(triangle_vertexes, vertexes_coord, saveDir):
     RWGNumber_oppVertexes = readBlitzArrayFromDisk(os.path.join(saveDir, "RWGNumber_oppVertexes.txt"), N_RWG, 2, 'i')
     is_closed_surface = readASCIIBlitzIntArray1DFromDisk(os.path.join(saveDir, "is_closed_surface.txt"))
     triangles_surfaces = readASCIIBlitzIntArray1DFromDisk(os.path.join(saveDir, "triangles_surfaces.txt"))
-    print("    edgeNumber_triangles construction cumulated time = " + str(time.clock() - t10))
+    print("    edgeNumber_triangles construction cumulated time = " + str(time.process_time() - t10))
     sys.stdout.flush()
     return triangles_surfaces, is_closed_surface, RWGNumber_signedTriangles, RWGNumber_edgeVertexes, RWGNumber_oppVertexes, reordered_triangle_vertexes
 
@@ -80,7 +80,7 @@ def edges_computation_C_old(triangle_vertexes, vertexes_coord, saveDir):
     # 1) the entire part formed by the numbers of the first column
     # 2) the decimal part formed by the numbers of the second column
 
-    t10 = time.clock()
+    t10 = time.process_time()
     print("    construction of edgeNumber_triangles...")
     sys.stdout.flush()
     saveDir = saveDir + "/"
@@ -206,14 +206,14 @@ def edges_computation_C_old(triangle_vertexes, vertexes_coord, saveDir):
                  headers = ['<iostream>','<string>','<vector>','<algorithm>','"mesh.h"'],
                  compiler = 'gcc',
                  extra_compile_args = ['-O3', '-pthread', '-w'])
-    print("time C++ execution = " + str(time.clock() - t10))
+    print("time C++ execution = " + str(time.process_time() - t10))
     N_RWG = readIntFromDisk(saveDir + "N_RWG.txt")
     RWGNumber_signedTriangles = readBlitzArrayFromDisk(saveDir + "RWGNumber_signedTriangles.txt", N_RWG, 2, 'i')
     RWGNumber_edgeVertexes = readBlitzArrayFromDisk(saveDir + "RWGNumber_edgeVertexes.txt", N_RWG, 2, 'i')
     RWGNumber_oppVertexes = readBlitzArrayFromDisk(saveDir + "RWGNumber_oppVertexes.txt", N_RWG, 2, 'i')
     is_closed_surface = readASCIIBlitzIntArray1DFromDisk(saveDir + "is_closed_surface.txt")
     triangles_surfaces = readASCIIBlitzIntArray1DFromDisk(saveDir + "triangles_surfaces.txt")
-    print("    edgeNumber_triangles construction cumulated time = " + str(time.clock() - t10))
+    print("    edgeNumber_triangles construction cumulated time = " + str(time.process_time() - t10))
     saveDir = saveDir[:-1]
     return triangles_surfaces, is_closed_surface, RWGNumber_signedTriangles, RWGNumber_edgeVertexes, RWGNumber_oppVertexes
 
@@ -230,10 +230,10 @@ if __name__=="__main__":
     executeGmsh(path, targetName, 0)
     targetDimensions_scaling_factor = 1.0
     z_offset = 0.0
-    t0 = time.clock()
+    t0 = time.process_time()
     #vertexes_coord, triangle_vertexes, triangles_physicalSurface = read_mesh_GMSH_1(os.path.join(path, targetName + '.msh'), targetDimensions_scaling_factor, z_offset)
     vertexes_coord, triangle_vertexes, triangles_physicalSurface = read_mesh_GMSH_2(os.path.join(path, targetName + '.msh'), targetDimensions_scaling_factor, z_offset)
-    print("reading mesh time = " + str(time.clock() - t0) + " seconds")
+    print("reading mesh time = " + str(time.process_time() - t0) + " seconds")
 
     triangles_surfaces_C, is_closed_surface_C, RWGNumber_signedTriangles_C, RWGNumber_edgeVertexes_C, RWGNumber_oppVertexes_C = edges_computation_C(triangle_vertexes, vertexes_coord)
 
