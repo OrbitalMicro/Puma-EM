@@ -29,9 +29,9 @@ def setup_mesh(params_simu, simuDirName):
     path, name = geoDirName, params_simu.targetName + params_simu.meshFileTermination
     meshPath = os.path.join(tmpDirName, "mesh")
     print("read_MLFMA_mesh_part1.py: reading" + os.path.join(path, name) + "...")
-    t0 = time.clock()
+    t0 = time.process_time()
     vertexes_coord, triangle_vertexes, triangles_physicalSurface = readMesh(path, name, params_simu)
-    time_reading = time.clock()-t0
+    time_reading = time.process_time()-t0
     print("reading mesh time = " + str(time_reading) + " seconds")
     T = triangle_vertexes.shape[0]
     V = vertexes_coord.shape[0]

@@ -74,14 +74,14 @@ if __name__=="__main__":
     print("number of triangles T =", T)
 
     print("    reordering triangles for normals coherency...",)
-    t0 = time.clock()
+    t0 = time.process_time()
     triangles_surfaces = reorder_triangle_vertexes(triangle_adjacentTriangles, is_triangle_adjacentTriangles_via_junction, triangle_vertexes, vertexes_coord)
     S = max(triangles_surfaces)+1
-    time_reordering_normals = time.clock()-t0
+    time_reordering_normals = time.process_time()-t0
     print("time =", time_reordering_normals, "seconds")
 
-    t0 = time.clock()
+    t0 = time.process_time()
     print("writing the mesh file in I-DEAS format...",)
     createIDEASFile(vertexes_coord, triangle_vertexes, path, targetName)
-    print("time =", time.clock() - t0, "seconds")
+    print("time =", time.process_time() - t0, "seconds")
 

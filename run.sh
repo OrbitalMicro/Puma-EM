@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 DIR=$(dirname $(readlink -f $0))
 
@@ -36,6 +37,10 @@ PYTHON_CMD="python"
 [ ! -e "${SIMU_DIR}" ] && mkdir -p ${SIMU_DIR}
 rm -rf ${SIMU_DIR}/tmp*
 rm -rf ${SIMU_DIR}/geo/*.msh* ${SIMU_DIR}/geo/*.txt  
+rm -f ${SIMU_DIR}/ZI_initial_complex64.bin
+if [ -f "${INPUT_DIR}/ZI_initial_complex64.bin" ]; then
+        cp "${INPUT_DIR}/ZI_initial_complex64.bin" "${SIMU_DIR}/ZI_initial_complex64.bin"
+fi
 mkdir -p ${SIMU_DIR}/result
 
 # JPA : debut de la partie qui sera redirigee vers le log
@@ -98,7 +103,7 @@ ${PYTHON_CMD} code/RCS_MLFMA.py --inputdir ${INPUT_DIR} --simudir ${SIMU_DIR}
 cp -r ${SIMU_DIR}/tmp0/iterative_data ${RESULT_DIR}
 cp -r ${SIMU_DIR}/tmp0/octtree_data/big_cube_center_coord.txt ${RESULT_DIR}
 cp -r ${SIMU_DIR}/result/* ${RESULT_DIR}
-cp -r ${SIMU_DIR}/geo/*.geo ${RESULT_DIR}
+cp -r ${SIMU_DIR}/geo/*.geo ${RESULT_DIR} 2>/dev/null || true
 rm -rf ${SIMU_DIR} GMSHcommand.sh
 
 # echo " "

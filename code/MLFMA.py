@@ -15,7 +15,7 @@ def read_CPU_time(filename):
     file.close()
     CPU_time = 0.0
     for line in CPU_time_tmp:
-        if 'real' in line:
+        if line.startswith('real '):
             CPU_time = float(line.split()[1])
     return CPU_time
 

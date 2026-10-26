@@ -9,6 +9,15 @@ def setup_excitation(params_simu, inputDirName, simuDirName):
     my_id = MPI.COMM_WORLD.Get_rank()
     tmpDirName = os.path.join(simuDirName, 'tmp' + str(my_id))
 
+    rhs_mode = os.environ.get('PUMA_RHS_MODE', 'legacy')
+    if rhs_mode not in ('legacy', 'read'):
+        raise ValueError('Unsupported PUMA_RHS_MODE=' + repr(rhs_mode))
+    with open(os.path.join(tmpDirName, 'V_CFIE/RHS_MODE.txt'), 'w') as stream:
+        stream.write(rhs_mode + '\n')
+    with open(os.path.join(tmpDirName, 'V_CFIE/RHS_CACHE_PATH.txt'), 'w') as stream:
+        stream.write(os.path.abspath(os.path.join(
+            inputDirName, 'V_CFIE_global_complex64.bin')) + '\n')
+
     # phase center
     writeASCIIBlitzArrayToDisk(array(params_simu.r_phase_center), os.path.join(tmpDirName,'V_CFIE/r_phase_center.txt'))
 

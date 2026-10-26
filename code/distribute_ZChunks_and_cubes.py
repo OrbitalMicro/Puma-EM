@@ -79,7 +79,7 @@ def createChunkDirs(ZprocessNumber_to_ChunksNumbers, tmpDirName, my_id):
 
 def distribute_Chunks(params_simu, simuDirName):
     Wall_t0 = time.time()
-    CPU_t0 = time.clock()
+    CPU_t0 = time.process_time()
     num_procs = MPI.COMM_WORLD.Get_size()
     my_id = MPI.COMM_WORLD.Get_rank()
     tmpDirName = os.path.join(simuDirName, 'tmp' + str(my_id))
@@ -125,7 +125,7 @@ def distribute_Chunks(params_simu, simuDirName):
     variables['cubeNumber_to_chunkNumber'] = cubeNumber_to_chunkNumber
     variables['chunkNumber_to_processNumber'] = chunkNumber_to_processNumber
     variables['processNumber_to_ChunksNumbers'] = processNumber_to_ChunksNumbers
-    CPU_time_distribute_ZChunks_and_cubes = time.clock() - CPU_t0
+    CPU_time_distribute_ZChunks_and_cubes = time.process_time() - CPU_t0
     Wall_time_distribute_ZChunks_and_cubes = time.time() - Wall_t0
     variables['Wall_time_distribute_ZChunks_and_cubes'] = Wall_time_distribute_ZChunks_and_cubes
     variables['CPU_time_distribute_ZChunks_and_cubes'] = CPU_time_distribute_ZChunks_and_cubes
