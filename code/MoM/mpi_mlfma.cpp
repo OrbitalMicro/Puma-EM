@@ -9,6 +9,8 @@
 #include <vector>
 #include <algorithm>
 #include <mpi.h>
+#include <cstdlib>
+#include <sstream>
 
 using namespace std;
 
@@ -20,6 +22,82 @@ using namespace std;
 #include "V_E_V_H.h"
 #include "mesh.h"
 #include "EMConstants.h"
+#include "warm_start.h"
+
+bool warmTraceEnabled()
+{
+  const char* value = std::getenv("PUMA_WARM_TRACE");
+  return value != NULL && std::string(value) == "1";
+}
+
+void appendWarmTrace(const string& simulation_dir, const int rank, const string& phase)
+{
+  if (!warmTraceEnabled()) return;
+  const string filename = simulation_dir + "/tmp" + intToString(rank)
+      + "/iterative_data/warm_start_trace.txt";
+  std::ofstream output(filename.c_str(), std::ios::app);
+  output << MPI_Wtime() << " " << phase << std::endl;
+}
+
+void initializeSolutionFromWarmStart(
+    blitz::Array<std::complex<float>, 1>& local_solution,
+    const blitz::Array<int, 1>& local_rwg_numbers,
+    const int global_rwg_count,
+    const string& simulation_dir)
+{
+  const int master = 0;
+  const int my_id = MPI::COMM_WORLD.Get_rank();
+  const string filename = simulation_dir + "/ZI_initial_complex64.bin";
+  std::vector<std::complex<float> > global_coefficients;
+  std::string error;
+  int status = WARM_START_ABSENT;
+  appendWarmTrace(simulation_dir, my_id, "warm-entry");
+  if (my_id == master) {
+    status = readWarmStartComplex64(
+        filename, global_rwg_count, global_coefficients, error);
+    if (status == WARM_START_INVALID) {
+      std::cerr << "Invalid warm-start file " << filename << ": " << error
+                << std::endl;
+    }
+  }
+  MPI_Bcast(&status, 1, MPI_INT, master, MPI_COMM_WORLD);
+  appendWarmTrace(simulation_dir, my_id, "warm-status-broadcast");
+  if (status == WARM_START_INVALID) {
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
+  if (status == WARM_START_ABSENT) {
+    local_solution = 0.0;
+    return;
+  }
+
+  if (my_id != master) global_coefficients.resize(global_rwg_count);
+  MPI_Bcast(
+      &global_coefficients[0],
+      global_rwg_count,
+      MPI_COMPLEX,
+      master,
+      MPI_COMM_WORLD);
+  appendWarmTrace(simulation_dir, my_id, "warm-coefficients-broadcast");
+  std::vector<int> local_indices(local_rwg_numbers.size());
+  for (unsigned int index = 0; index < local_rwg_numbers.size(); ++index) {
+    local_indices[index] = local_rwg_numbers(index);
+  }
+  std::vector<std::complex<float> > selected_coefficients;
+  if (!selectLocalWarmStart(
+          global_coefficients, local_indices, selected_coefficients, error)) {
+    std::cerr << "Rank " << my_id << " could not map warm-start coefficients: "
+              << error << std::endl;
+    MPI_Abort(MPI_COMM_WORLD, 3);
+  }
+  for (unsigned int index = 0; index < selected_coefficients.size(); ++index) {
+    local_solution(index) = selected_coefficients[index];
+  }
+  appendWarmTrace(simulation_dir, my_id, "warm-mapped");
+  if (my_id == master) {
+    std::cout << "Loaded warm start from " << filename << " with "
+              << global_rwg_count << " global RWG coefficients" << std::endl;
+  }
+}
 
 /****************************************************************************/
 /******************************* MLFMA matvec *******************************/
@@ -43,6 +121,7 @@ class MatvecMLFMA {
     int N_RWG;
     blitz::Array<int, 1> localRWGnumbers;
     string simuDir;
+    int matvecCalls;
 
     // constructors
     MatvecMLFMA(void){}
@@ -81,6 +160,7 @@ MatvecMLFMA::MatvecMLFMA(Octtree & octtree,
   localRWGnumbers.resize(localRWGindexes.size());
   localRWGnumbers = localRWGindexes;
   simuDir = simu_dir;
+  matvecCalls = 0;
 }
 
 void MatvecMLFMA::copyMatvecMLFMA(const MatvecMLFMA& matvecMLFMAtoCopy) // copy member function
@@ -92,6 +172,7 @@ void MatvecMLFMA::copyMatvecMLFMA(const MatvecMLFMA& matvecMLFMAtoCopy) // copy 
   localRWGnumbers.resize(matvecMLFMAtoCopy.localRWGnumbers.size());
   localRWGnumbers = matvecMLFMAtoCopy.localRWGnumbers;
   simuDir = matvecMLFMAtoCopy.simuDir;
+  matvecCalls = matvecMLFMAtoCopy.matvecCalls;
 }
 
 MatvecMLFMA::MatvecMLFMA(const MatvecMLFMA& matvecMLFMAtoCopy) // copy constructor
@@ -120,12 +201,26 @@ void MatvecMLFMA::matvecZnear(blitz::Array<std::complex<float>, 1> & y, const bl
 
 blitz::Array<std::complex<float>, 1> MatvecMLFMA::matvec(const blitz::Array<std::complex<float>, 1> & x)
 {
+  const int matvec_call = matvecCalls;
+  const bool trace_matvec = warmTraceEnabled()
+      && (matvec_call == 0 || procNumber == 0);
+  ++matvecCalls;
+  std::ostringstream trace_phase;
+  if (trace_matvec) {
+    trace_phase << "matvec-" << matvec_call << "-entry";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
   // creation of a local solution vector for MLFMA
   blitz::Array<std::complex<float>, 1> y_local_MLFMA(this->localRWGnumbers.size());
   y_local_MLFMA = 0.0;
 
   // far-field multiplication
   pOcttree->ZIFarComputation(y_local_MLFMA, x);
+  if (trace_matvec) {
+    trace_phase.str("");
+    trace_phase << "matvec-" << matvec_call << "-far-complete";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
   
   // distribution of x among processes
   blitz::Array<std::complex<float>, 1> x_global(this->N_RWG);
@@ -133,6 +228,11 @@ blitz::Array<std::complex<float>, 1> MatvecMLFMA::matvec(const blitz::Array<std:
   for (unsigned int i=0 ; i<this->localRWGnumbers.size() ; ++i) x_global(this->localRWGnumbers(i)) = x(i);
   // we should now gather and redistribute the result among the processes
   gatherAndRedistribute(x_global, getProcNumber(), getTotalProcNumber());
+  if (trace_matvec) {
+    trace_phase.str("");
+    trace_phase << "matvec-" << matvec_call << "-x-redistributed";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
 
   // near-field multiplication
   const int my_id = MPI::COMM_WORLD.Get_rank();
@@ -156,6 +256,11 @@ blitz::Array<std::complex<float>, 1> MatvecMLFMA::matvec(const blitz::Array<std:
   blitz::Array<std::complex<float>, 1> y_local_Z(local_N_test_RWG);
   y_local_Z = 0.0;
   matvecZnear(y_local_Z, x_local_Z);
+  if (trace_matvec) {
+    trace_phase.str("");
+    trace_phase << "matvec-" << matvec_call << "-near-complete";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
   x_local_Z.free();
   // we should now gather and redistribute the result among the processes
   // but first we add the results from the multiplications
@@ -166,9 +271,19 @@ blitz::Array<std::complex<float>, 1> MatvecMLFMA::matvec(const blitz::Array<std:
   for (unsigned int i=0 ; i<this->localRWGnumbers.size() ; ++i) y_global(this->localRWGnumbers(i)) += y_local_MLFMA(i);
   y_local_MLFMA.free();
   gatherAndRedistribute(y_global, getProcNumber(), getTotalProcNumber());
+  if (trace_matvec) {
+    trace_phase.str("");
+    trace_phase << "matvec-" << matvec_call << "-y-redistributed";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
   // we now select only the elements to return
   blitz::Array<std::complex<float>, 1> yTmp(this->localRWGnumbers.size());
   for (unsigned int i=0 ; i<this->localRWGnumbers.size() ; ++i) yTmp(i) = y_global(this->localRWGnumbers(i));
+  if (trace_matvec) {
+    trace_phase.str("");
+    trace_phase << "matvec-" << matvec_call << "-complete";
+    appendWarmTrace(simuDir, procNumber, trace_phase.str());
+  }
   return yTmp;
 }
 
@@ -234,12 +349,17 @@ LeftFrobPsolveMLFMA& LeftFrobPsolveMLFMA::operator=(const LeftFrobPsolveMLFMA& l
 
 blitz::Array<std::complex<float>, 1> LeftFrobPsolveMLFMA::psolve(const blitz::Array<std::complex<float>, 1> & x)
 {
+  const char* profile_value = std::getenv("PUMA_FROB_PROFILE");
+  const bool profile = profile_value != NULL && string(profile_value) != "0";
+  const double input_redistribute_start = MPI_Wtime();
   const int my_id = MPI::COMM_WORLD.Get_rank();
   blitz::Array<std::complex<float>, 1> x_global(this->N_RWG);
   x_global = 0.0;
   for (unsigned int i=0 ; i<localRWGnumbers.size() ; ++i) x_global(localRWGnumbers(i)) = x(i);
   gatherAndRedistribute(x_global, procNumber, totalProcNumber);
+  const double input_redistribute_seconds = MPI_Wtime() - input_redistribute_start;
 
+  const double metadata_read_start = MPI_Wtime();
   const string pathToReadFrom = simuDir + "/tmp" + intToString(my_id) + "/Mg_LeftFrob/", Z_name = "Mg_LeftFrob";
   int local_N_src_RWG;
   string filename = pathToReadFrom + "local_N_src_RWG.txt";
@@ -261,12 +381,19 @@ blitz::Array<std::complex<float>, 1> LeftFrobPsolveMLFMA::psolve(const blitz::Ar
   y_local_Y = 0.0;
   blitz::Array<int, 1> chunkNumbers;
   readIntBlitzArray1DFromASCIIFile(pathToReadFrom + "chunkNumbers.txt", chunkNumbers);
+  const double metadata_read_seconds = MPI_Wtime() - metadata_read_start;
+  double sparse_read_seconds = 0.0;
+  double sparse_matvec_seconds = 0.0;
   Z_sparse_MLFMA Mg_LeftFrob;
   for (unsigned int i=0 ; i<chunkNumbers.size() ; i++) {
     int number = chunkNumbers(i);
+    const double sparse_read_start = MPI_Wtime();
     Mg_LeftFrob.setZ_sparse_MLFMAFromFile(pathToReadFrom, Z_name, number);
+    sparse_read_seconds += MPI_Wtime() - sparse_read_start;
     //Mg_LeftFrob.printZ_CFIE_near();
+    const double sparse_matvec_start = MPI_Wtime();
     Mg_LeftFrob.matvec_Z_PQ_near(y_local_Y, x_local_Y);
+    sparse_matvec_seconds += MPI_Wtime() - sparse_matvec_start;
   }
   x_local_Y.free();
   // we should now gather and redistribute the result among the processes
@@ -274,10 +401,26 @@ blitz::Array<std::complex<float>, 1> LeftFrobPsolveMLFMA::psolve(const blitz::Ar
   y_global = 0.0;
   for (int i=0; i<local_N_test_RWG; i++) y_global(local_test_RWG_numbers(i)) += y_local_Y(i);
   y_local_Y.free();
+  const double output_redistribute_start = MPI_Wtime();
   gatherAndRedistribute(y_global, procNumber, totalProcNumber);
+  const double output_redistribute_seconds = MPI_Wtime() - output_redistribute_start;
   // we now select only the elements to return
   blitz::Array<std::complex<float>, 1> yTmp(localRWGnumbers.size());
   for (unsigned int i=0 ; i<localRWGnumbers.size() ; ++i) yTmp(i) = y_global(localRWGnumbers(i));
+  if (profile) {
+    std::ostringstream record;
+    record << "FROB_APPLY_PROFILE"
+           << " rank=" << my_id
+           << " local_src_rwgs=" << local_N_src_RWG
+           << " local_test_rwgs=" << local_N_test_RWG
+           << " chunks=" << chunkNumbers.size()
+           << " input_redistribute_s=" << input_redistribute_seconds
+           << " metadata_read_s=" << metadata_read_seconds
+           << " sparse_read_s=" << sparse_read_seconds
+           << " sparse_matvec_s=" << sparse_matvec_seconds
+           << " output_redistribute_s=" << output_redistribute_seconds;
+    std::cout << record.str() << std::endl;
+  }
   return yTmp;
 }
 
@@ -344,10 +487,23 @@ blitz::Array<std::complex<float>, 1> PsolveAMLFMA::psolve(const blitz::Array<std
   double error;
   blitz::Array<std::complex<float>, 1> y(this->NlocalRWG);
   y = 0.0;
-  if (inner_solver == "BICGSTAB") bicgstab(y, error, iter, flag, matvec, innerPsolve, x, inner_tol, 100, my_id, num_procs, ITERATIVE_DATA_PATH + "inner_convergence.txt");
+  if (warmTraceEnabled() && my_id == 0) {
+    std::ostringstream phase;
+    phase << "inner-entry solver=" << inner_solver
+          << " maxiter=" << inner_maxiter;
+    appendWarmTrace(simuDir, my_id, phase.str());
+  }
+  if (inner_solver == "BICGSTAB") bicgstab(y, error, iter, flag, matvec, innerPsolve, x, inner_tol, inner_maxiter, my_id, num_procs, ITERATIVE_DATA_PATH + "inner_convergence.txt");
   else if (inner_solver == "GMRES") gmres(y, error, iter, flag, matvec, innerPsolve, x, inner_tol, inner_restart, inner_maxiter, my_id, num_procs, ITERATIVE_DATA_PATH + "inner_convergence.txt");
   else if (inner_solver == "RGMRES") fgmres(y, error, iter, flag, matvec, innerPsolve, x, inner_tol, inner_restart, inner_maxiter, my_id, num_procs, ITERATIVE_DATA_PATH + "inner_convergence.txt");
   else if (inner_solver == "FGMRES") fgmres(y, error, iter, flag, matvec, innerPsolve, x, inner_tol, inner_restart, inner_maxiter, my_id, num_procs, ITERATIVE_DATA_PATH + "inner_convergence.txt");
+  if (warmTraceEnabled() && my_id == 0) {
+    std::ostringstream phase;
+    phase << "inner-complete iter=" << iter
+          << " error=" << error
+          << " flag=" << flag;
+    appendWarmTrace(simuDir, my_id, phase.str());
+  }
   return y;
 }
 
@@ -481,7 +637,8 @@ void computeForOneExcitation(Octtree & octtree,
   readIntFromASCIIFile(ITERATIVE_DATA_PATH + "RESTART.txt", RESTART);
   readIntFromASCIIFile(ITERATIVE_DATA_PATH + "MAXITER.txt", MAXITER);
   blitz::Array<std::complex<float>, 1> ZI(N_local_RWG);
-  ZI = 0.0;
+  initializeSolutionFromWarmStart(
+      ZI, localRWGNumbers, N_RWG, SIMU_DIR);
   if (SOLVER=="BICGSTAB") {
     PrecondFunctor< std::complex<float>, LeftFrobPsolveMLFMA > psolve(&leftFrobPsolveMLFMA, &LeftFrobPsolveMLFMA::psolve);
     bicgstab(ZI, error, iter, flag, matvec, psolve, V_CFIE, TOL, MAXITER, my_id, num_procs, ITERATIVE_DATA_PATH + "/convergence.txt");
@@ -686,6 +843,7 @@ void computeForOneExcitation(Octtree & octtree,
     ofstream ofs(filename.c_str(), blitz::ios::binary);
     ofs.write((char *)(recvBuf.data()), recvBuf.size()*8);
     ofs.close();
+    writeIntToASCIIFile(TMP + "/ZI/ZI_size.txt", N_RWG);
     writeIntToASCIIFile(ITERATIVE_DATA_PATH + "numberOfMatvecs.txt", octtree.getNumberOfUpdates());
     writeIntToASCIIFile(ITERATIVE_DATA_PATH + "iter.txt", iter);
     cout << endl;

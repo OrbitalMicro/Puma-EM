@@ -7,12 +7,18 @@
 #include <mpi.h>
 #include <map>
 #include <set>
+#include <cstdlib>
+#include <cerrno>
+#include <climits>
+#include <sstream>
+#include <stdexcept>
 
 using namespace std;
 
 #include "readWriteBlitzArrayFromFile.h"
 #include "GetMemUsage.h"
 #include "./lapack/zgels_interface.h"
+#include "frob_blocks.h"
 
 class CubeArrays {
   public:
@@ -110,6 +116,35 @@ CubeArrays::~CubeArrays() {
 typedef std::map<int, CubeArrays> CubeArraysMap;
 typedef std::map<int, CubeArrays>::const_iterator CubeArraysMapIterator;
 
+bool frobProfilingEnabled() {
+  const char* value = std::getenv("PUMA_FROB_PROFILE");
+  return value != NULL && string(value) != "0";
+}
+
+struct FrobConfig {
+  int max_core_rwgs;
+  int overlap_rings;
+};
+
+int readNonnegativeEnvironment(const char* name, const int default_value) {
+  const char* value = std::getenv(name);
+  if (value == NULL || string(value).empty()) return default_value;
+  errno = 0;
+  char* end = NULL;
+  const long parsed = std::strtol(value, &end, 10);
+  if (errno != 0 || end == value || *end != '\0' || parsed < 0 || parsed > INT_MAX) {
+    throw std::invalid_argument(string(name) + " must be a nonnegative integer");
+  }
+  return static_cast<int>(parsed);
+}
+
+FrobConfig readFrobConfig() {
+  FrobConfig config;
+  config.max_core_rwgs = readNonnegativeEnvironment("FROB_MAX_CORE_RWGS", 0);
+  config.overlap_rings = readNonnegativeEnvironment("FROB_OVERLAP_RINGS", 1);
+  return config;
+}
+
 
 void computeLwork(int & lwork, const int M, const int N, const int nrhs) {
   // computes the space necessary for WORK to.....work!!
@@ -157,13 +192,12 @@ void computeMyPinvCC(blitz::Array<std::complex<double>, 2>& Y, blitz::Array<std:
   }
 }
 
-void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg_tmp,
-                                        blitz::Array<int, 1>& src_edges_numbers_2,
-                                        const int cubeNumber,
-                                        const CubeArraysMap & ListCubes)
+void assembleLocalMatrix(blitz::Array<std::complex<float>, 2>& Z_local,
+                         const int cubeNumber,
+                         const CubeArraysMap & ListCubes)
 {
   CubeArraysMapIterator it = ListCubes.find(cubeNumber);
-  blitz::Array<std::complex<float>, 2> Z_local((*it).second.N_RWG_src, (*it).second.N_RWG_src);
+  Z_local.resize((*it).second.N_RWG_src, (*it).second.N_RWG_src);
   Z_local = std::complex<float>(0.0, 0.0);
   for (int i=0; i<(*it).second.N_RWG_src; i++) Z_local(i, i) = std::complex<float>(1.0, 0.0);
 
@@ -177,22 +211,18 @@ void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg
   for (int index=0; index<(*it).second.N_neighbors; index++) {
     const int neighborCubeNumber = (*it).second.neighborsIndexes[index];
     CubeArraysMapIterator it_neighbor = ListCubes.find(neighborCubeNumber);
-    // we first fill in the first lines of Z_local
     if (index==0) {
       for (int i=0; i<(*it).second.N_RWG_test; i++) {
         for (int j=0; j<(*it).second.N_RWG_src; j++) Z_local(i, j) = (*it).second.Z_CFIE_J(i, j);
       }
     }
-    // we then fill in the remaining lines
     else {
-      // first we find the line indexes
       std::vector<int> Z_local_lines_indexes;
       Z_local_lines_indexes.resize((*it_neighbor).second.N_RWG_test);
       for (int i=0; i<(*it_neighbor).second.N_RWG_test; i++) {
-        const int RWG_number = (*it_neighbor).second.testSrc_RWGsNumbers[i];  
+        const int RWG_number = (*it_neighbor).second.testSrc_RWGsNumbers[i];
         Z_local_lines_indexes[i] = src_edges_numbers_local_src_edges_numbers[RWG_number];
       }
-      // then we find the column indexes. A little more complicated
       std::vector<int> common_neighborsNumbers;
       for (int i=0; i<(*it_neighbor).second.N_neighbors; i++) {
         const int val = (*it_neighbor).second.neighborsIndexes[i];
@@ -219,7 +249,6 @@ void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg
         const int RWG_number = src_tmp[i];
         Z_local_columns_indexes[i] = src_edges_numbers_local_src_edges_numbers[RWG_number];
       }
-      // we construct Z_local
       for (int i=0; i<(int)Z_local_lines_indexes.size(); i++) {
         for (unsigned int j=0; j<Z_local_columns_indexes.size(); j++) {
           const int index_line = Z_local_lines_indexes[i];
@@ -227,9 +256,23 @@ void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg
           Z_local(index_line, index_column) = (*it_neighbor).second.Z_CFIE_J(i, columnsOfNeighborCubeToBeConsidered[j]);
         }
       }
-    } // end else
-  } // end for 
+    }
+  }
+}
 
+void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg_tmp,
+                                        blitz::Array<int, 1>& src_edges_numbers_2,
+                                        const int cubeNumber,
+                                        const CubeArraysMap & ListCubes)
+{
+  const bool profile = frobProfilingEnabled();
+  const double assembly_start = MPI_Wtime();
+  CubeArraysMapIterator it = ListCubes.find(cubeNumber);
+  blitz::Array<std::complex<float>, 2> Z_local;
+  assembleLocalMatrix(Z_local, cubeNumber, ListCubes);
+
+  const double assembly_seconds = MPI_Wtime() - assembly_start;
+  const double row_pack_start = MPI_Wtime();
   // further reduce the matrix size
   int N_lines = 0;
   for (int i=0; i<(*it).second.N_RWG_src; i++) N_lines += (*it).second.isEdgeInCartesianRadius[i];
@@ -244,20 +287,270 @@ void MgPreconditionerComputationPerCube(blitz::Array<std::complex<float>, 1>& Mg
       line_index++;
     }
   }
+  const double row_pack_seconds = MPI_Wtime() - row_pack_start;
   // compute the SAI matrix
   blitz::Array<std::complex<double>, 2> Y_CFIE;
+  const double zgels_start = MPI_Wtime();
   computeMyPinvCC(Y_CFIE, Z_local_2, N_lines, (*it).second.N_RWG_src);
+  const double zgels_seconds = MPI_Wtime() - zgels_start;
   
+  const double output_pack_start = MPI_Wtime();
   Mg_tmp.resize((*it).second.N_RWG_test * Y_CFIE.extent(1));
   for (int i=0; i<(*it).second.N_RWG_test; i++) {
     for (int j=0; j<Y_CFIE.extent(1); j++) Mg_tmp(i*Y_CFIE.extent(1) + j) = Y_CFIE(i, j);    
   }
+  const double output_pack_seconds = MPI_Wtime() - output_pack_start;
+
+  if (profile) {
+    const int m = N_lines;
+    const int n = (*it).second.N_RWG_src;
+    const int nrhs = m;
+    const int ldb = max(n, m);
+    int lwork;
+    computeLwork(lwork, m, n, nrhs);
+    const double qr_flop_estimate = 8.0 * min(m, n) * min(m, n) * (max(m, n) + nrhs);
+    const long long workspace_estimate_bytes =
+      8LL * n * n + 16LL * m * n + 16LL * ldb * nrhs +
+      16LL * lwork + 16LL * n * nrhs;
+    int output_nonzeros = 0;
+    for (int i=0; i<(int)Mg_tmp.size(); i++) {
+      if (Mg_tmp(i) != std::complex<float>(0.0, 0.0)) output_nonzeros++;
+    }
+    std::ostringstream record;
+    record << "FROB_PROFILE"
+           << " rank=" << MPI::COMM_WORLD.Get_rank()
+           << " cube=" << cubeNumber
+           << " m=" << m
+           << " n=" << n
+           << " nrhs=" << nrhs
+           << " neighbors=" << (*it).second.N_neighbors
+           << " selected_rows=" << N_lines
+           << " qr_flop_estimate=" << qr_flop_estimate
+           << " workspace_estimate_bytes=" << workspace_estimate_bytes
+           << " output_nonzeros=" << output_nonzeros
+           << " assembly_s=" << assembly_seconds
+           << " row_pack_s=" << row_pack_seconds
+           << " zgels_s=" << zgels_seconds
+           << " output_pack_s=" << output_pack_seconds;
+    std::cout << record.str() << std::endl;
+  }
+}
+
+struct BoundedCubePreconditioner {
+  std::vector<std::complex<float> > values;
+  std::vector<int> source_rwgs;
+  std::vector<int> row_source_starts;
+  std::vector<int> row_source_stops;
+};
+
+void loadGlobalRwgTriangles(
+    blitz::Array<int, 2>& rwg_signed_triangles,
+    const string& simu_dir)
+{
+  const int my_id = MPI::COMM_WORLD.Get_rank();
+  int number_of_rwgs = 0;
+  int valid = 1;
+  const string mesh_path = simu_dir + "/tmp0/mesh/";
+  const string triangles_path = mesh_path + "RWGNumber_signedTriangles.txt";
+  if (my_id == 0) {
+    readIntFromASCIIFile(mesh_path + "N_RWG.txt", number_of_rwgs);
+    std::ifstream stream(triangles_path.c_str(), std::ios::binary | std::ios::ate);
+    if (!stream || stream.tellg() != static_cast<std::streamoff>(2LL * number_of_rwgs * sizeof(int))) {
+      valid = 0;
+    }
+  }
+  MPI_Bcast(&valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Bcast(&number_of_rwgs, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  if (!valid || number_of_rwgs <= 0) {
+    throw std::runtime_error("invalid RWGNumber_signedTriangles topology file");
+  }
+  rwg_signed_triangles.resize(number_of_rwgs, 2);
+  if (my_id == 0) {
+    readIntBlitzArray2DFromBinaryFile(triangles_path, rwg_signed_triangles);
+  }
+  MPI_Bcast(rwg_signed_triangles.data(), 2 * number_of_rwgs, MPI_INT, 0, MPI_COMM_WORLD);
+}
+
+std::vector<std::vector<int> > buildLocalAdjacency(
+    const CubeArrays& cube,
+    const blitz::Array<int, 2>& rwg_signed_triangles) {
+  std::map<int, std::vector<int> > triangle_members;
+  for (int local_index = 0; local_index < cube.N_RWG_src; local_index++) {
+    const int global_rwg = cube.testSrc_RWGsNumbers[local_index];
+    if (global_rwg < 0 || global_rwg >= rwg_signed_triangles.extent(0)) {
+      throw std::runtime_error("cube references an RWG outside the topology table");
+    }
+    triangle_members[rwg_signed_triangles(global_rwg, 0)].push_back(local_index);
+    const int second_triangle = rwg_signed_triangles(global_rwg, 1);
+    if (second_triangle != rwg_signed_triangles(global_rwg, 0)) {
+      triangle_members[second_triangle].push_back(local_index);
+    }
+  }
+
+  std::vector<std::set<int> > adjacency_sets(cube.N_RWG_src);
+  for (std::map<int, std::vector<int> >::const_iterator bucket = triangle_members.begin();
+       bucket != triangle_members.end();
+       bucket++) {
+    const std::vector<int>& members = bucket->second;
+    for (unsigned int first = 0; first < members.size(); first++) {
+      for (unsigned int second = first + 1; second < members.size(); second++) {
+        adjacency_sets[members[first]].insert(members[second]);
+        adjacency_sets[members[second]].insert(members[first]);
+      }
+    }
+  }
+
+  std::vector<std::vector<int> > adjacency(cube.N_RWG_src);
+  for (int local_index = 0; local_index < cube.N_RWG_src; local_index++) {
+    adjacency[local_index].assign(
+      adjacency_sets[local_index].begin(), adjacency_sets[local_index].end());
+  }
+  return adjacency;
+}
+
+BoundedCubePreconditioner MgBoundedPreconditionerComputationPerCube(
+    const int cubeNumber,
+    const CubeArraysMap & ListCubes,
+    const FrobConfig& config,
+    const blitz::Array<int, 2>& rwg_signed_triangles)
+{
+  const bool profile = frobProfilingEnabled();
+  const double assembly_start = MPI_Wtime();
+  CubeArraysMapIterator it = ListCubes.find(cubeNumber);
+  blitz::Array<std::complex<float>, 2> Z_local;
+  assembleLocalMatrix(Z_local, cubeNumber, ListCubes);
+  const double assembly_seconds = MPI_Wtime() - assembly_start;
+
+  const std::vector<std::vector<int> > adjacency = buildLocalAdjacency(
+    (*it).second, rwg_signed_triangles);
+  const std::vector<FrobBlock> blocks = buildFrobBlocks(
+    adjacency,
+    (*it).second.N_RWG_test,
+    config.max_core_rwgs,
+    config.overlap_rings);
+
+  BoundedCubePreconditioner result;
+  result.row_source_starts.assign((*it).second.N_RWG_test, -1);
+  result.row_source_stops.assign((*it).second.N_RWG_test, -1);
+  std::vector<std::vector<std::complex<float> > > row_values((*it).second.N_RWG_test);
+
+  for (unsigned int block_number = 0; block_number < blocks.size(); block_number++) {
+    const FrobBlock& block = blocks[block_number];
+    std::vector<int> selected_rows;
+    for (unsigned int support_position = 0;
+         support_position < block.support_indexes.size();
+         support_position++) {
+      const int local_index = block.support_indexes[support_position];
+      if ((*it).second.isEdgeInCartesianRadius[local_index] == 1) {
+        selected_rows.push_back(local_index);
+      }
+    }
+    if (selected_rows.empty()) {
+      throw std::runtime_error("bounded FROB block has no selected source rows");
+    }
+
+    const int matrix_rows = selected_rows.size();
+    const int matrix_columns = block.support_indexes.size();
+    blitz::Array<std::complex<double>, 1> Z_block(matrix_rows * matrix_columns);
+    for (int column = 0; column < matrix_columns; column++) {
+      const int local_column = block.support_indexes[column];
+      for (int row = 0; row < matrix_rows; row++) {
+        Z_block(row + column * matrix_rows) = Z_local(selected_rows[row], local_column);
+      }
+    }
+
+    const int source_start = result.source_rwgs.size();
+    for (int row = 0; row < matrix_rows; row++) {
+      result.source_rwgs.push_back((*it).second.testSrc_RWGsNumbers[selected_rows[row]]);
+    }
+    const int source_stop = result.source_rwgs.size();
+
+    blitz::Array<std::complex<double>, 2> Y_CFIE;
+    const double zgels_start = MPI_Wtime();
+    computeMyPinvCC(Y_CFIE, Z_block, matrix_rows, matrix_columns);
+    const double zgels_seconds = MPI_Wtime() - zgels_start;
+
+    for (unsigned int core_position = 0;
+         core_position < block.core_indexes.size();
+         core_position++) {
+      const int core_index = block.core_indexes[core_position];
+      int support_position = -1;
+      for (unsigned int candidate = 0;
+           candidate < block.support_indexes.size();
+           candidate++) {
+        if (block.support_indexes[candidate] == core_index) {
+          support_position = candidate;
+          break;
+        }
+      }
+      if (support_position < 0) {
+        throw std::runtime_error("bounded FROB core row is absent from its support");
+      }
+      result.row_source_starts[core_index] = source_start;
+      result.row_source_stops[core_index] = source_stop;
+      row_values[core_index].reserve(matrix_rows);
+      for (int row = 0; row < matrix_rows; row++) {
+        row_values[core_index].push_back(
+          static_cast<std::complex<float> >(Y_CFIE(support_position, row)));
+      }
+    }
+
+    if (profile) {
+      std::ostringstream record;
+      record << "FROB_BLOCK_PROFILE"
+             << " rank=" << MPI::COMM_WORLD.Get_rank()
+             << " cube=" << cubeNumber
+             << " block=" << block_number
+             << " core_rwgs=" << block.core_indexes.size()
+             << " support_rwgs=" << matrix_columns
+             << " selected_rows=" << matrix_rows
+             << " assembly_s=" << assembly_seconds
+             << " zgels_s=" << zgels_seconds;
+      std::cout << record.str() << std::endl;
+    }
+  }
+
+  int expected_values = 0;
+  for (int core_index = 0; core_index < (*it).second.N_RWG_test; core_index++) {
+    if (result.row_source_starts[core_index] < 0 || result.row_source_stops[core_index] < 0) {
+      throw std::runtime_error("bounded FROB did not assign every core row");
+    }
+    if (result.row_source_starts[core_index] > result.row_source_stops[core_index] ||
+        result.row_source_stops[core_index] > static_cast<int>(result.source_rwgs.size())) {
+      throw std::runtime_error("bounded FROB produced an invalid source range");
+    }
+    expected_values += result.row_source_stops[core_index] - result.row_source_starts[core_index];
+    result.values.insert(
+      result.values.end(),
+      row_values[core_index].begin(),
+      row_values[core_index].end());
+  }
+  if (expected_values != static_cast<int>(result.values.size())) {
+    throw std::runtime_error("bounded FROB coefficient count does not match row ranges");
+  }
+  return result;
 }
 
 int main(int argc, char* argv[]) {
 
   MPI::Init();
   const int my_id = MPI::COMM_WORLD.Get_rank();
+  FrobConfig frob_config;
+  try {
+    frob_config = readFrobConfig();
+  }
+  catch (const std::exception& error) {
+    if (my_id == 0) std::cerr << "FROB_CONFIG_ERROR " << error.what() << std::endl;
+    MPI::Finalize();
+    return 2;
+  }
+  if (my_id == 0) {
+    std::cout << "FROB_CONFIG mode="
+              << (frob_config.max_core_rwgs > 0 ? "bounded" : "legacy")
+              << " max_core_rwgs=" << frob_config.max_core_rwgs
+              << " overlap_rings=" << frob_config.overlap_rings
+              << std::endl;
+  }
 
   string simuDir = ".";
   if ( argc > 2 ) {
@@ -271,6 +564,18 @@ int main(int argc, char* argv[]) {
   const string SAI_PRECOND_DATA_PATH = TMP + "/Mg_LeftFrob/";
   const string OCTTREE_DATA_PATH = TMP + "/octtree_data/";
   string filename;
+
+  blitz::Array<int, 2> rwg_signed_triangles;
+  if (frob_config.max_core_rwgs > 0) {
+    try {
+      loadGlobalRwgTriangles(rwg_signed_triangles, SIMU_DIR);
+    }
+    catch (const std::exception& error) {
+      if (my_id == 0) std::cerr << "FROB_TOPOLOGY_ERROR " << error.what() << std::endl;
+      MPI::Finalize();
+      return 2;
+    }
+  }
 
   blitz::Array<int, 1> chunkNumbers, cubeNumber_to_chunkNumber;
   readIntBlitzArray1DFromASCIIFile(SAI_PRECOND_DATA_PATH + "chunkNumbers.txt", chunkNumbers);
@@ -323,6 +628,53 @@ int main(int argc, char* argv[]) {
       const CubeArrays cube((*it).second);
       for (int kk=0; kk<cube.N_RWG_test; kk++) test_RWG_numbers(kk + startIndexInRWGNumbers) = cube.testSrc_RWGsNumbers[kk];
       startIndexInRWGNumbers += cube.N_RWG_test;
+    }
+    if (frob_config.max_core_rwgs > 0) {
+      std::vector<BoundedCubePreconditioner> bounded_results;
+      int bounded_N_precond = 0;
+      int bounded_N_q_array = 0;
+      for (int j=0; j<N_cubes; j++) {
+        const BoundedCubePreconditioner result = MgBoundedPreconditionerComputationPerCube(
+          cubesNumbers(j), ListCubes, frob_config, rwg_signed_triangles);
+        bounded_N_precond += static_cast<int>(result.values.size());
+        bounded_N_q_array += static_cast<int>(result.source_rwgs.size());
+        bounded_results.push_back(result);
+      }
+
+      blitz::Array<std::complex<float>, 1> Mg(bounded_N_precond);
+      blitz::Array<int, 2> rowIndexToColumnIndexes(N_RWG, 2);
+      blitz::Array<int, 1> src_RWG_numbers(bounded_N_q_array);
+      int value_offset = 0;
+      int source_offset = 0;
+      int row_offset = 0;
+      for (int j=0; j<N_cubes; j++) {
+        const BoundedCubePreconditioner& result = bounded_results[j];
+        for (int value_index = 0; value_index < static_cast<int>(result.values.size()); value_index++) {
+          Mg(value_offset++) = result.values[value_index];
+        }
+        for (int source_index = 0; source_index < static_cast<int>(result.source_rwgs.size()); source_index++) {
+          src_RWG_numbers(source_offset + source_index) = result.source_rwgs[source_index];
+        }
+        for (int row = 0; row < static_cast<int>(result.row_source_starts.size()); row++) {
+          rowIndexToColumnIndexes(row_offset + row, 0) = source_offset + result.row_source_starts[row];
+          rowIndexToColumnIndexes(row_offset + row, 1) = source_offset + result.row_source_stops[row];
+        }
+        source_offset += static_cast<int>(result.source_rwgs.size());
+        row_offset += static_cast<int>(result.row_source_starts.size());
+      }
+      if (value_offset != bounded_N_precond ||
+          source_offset != bounded_N_q_array ||
+          row_offset != N_RWG) {
+        throw std::runtime_error("bounded FROB chunk packing count mismatch");
+      }
+      writeComplexFloatBlitzArray1DToBinaryFile(SAI_PRECOND_DATA_PATH + "Mg_LeftFrob"+ intToString(chunk) + ".txt", Mg);
+      writeIntBlitzArray1DToBinaryFile(SAI_PRECOND_DATA_PATH + "src_RWG_numbers" + intToString(chunk) + ".txt", src_RWG_numbers);
+      writeIntBlitzArray2DToBinaryFile(SAI_PRECOND_DATA_PATH + "rowIndexToColumnIndexes" + intToString(chunk) + ".txt", rowIndexToColumnIndexes);
+      writeIntBlitzArray1DToBinaryFile(SAI_PRECOND_DATA_PATH + "test_RWG_numbers" + intToString(chunk) + ".txt", test_RWG_numbers);
+      writeIntToASCIIFile(SAI_PRECOND_DATA_PATH + "N_test_RWG" + intToString(chunk) + ".txt", test_RWG_numbers.size());
+      writeIntToASCIIFile(SAI_PRECOND_DATA_PATH + "N_near" + intToString(chunk) + ".txt", bounded_N_precond);
+      writeIntToASCIIFile(SAI_PRECOND_DATA_PATH + "N_src_RWG" + intToString(chunk) + ".txt", src_RWG_numbers.size());
+      continue;
     }
     // calculation of the SAI preconditioner
     // for the q_array, each src function for all the testing functions of a cube appears only once

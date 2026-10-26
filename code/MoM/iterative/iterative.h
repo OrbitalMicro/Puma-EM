@@ -7,6 +7,7 @@
 #include <blitz/array.h>
 #include <complex>
 #include <mpi.h>
+#include <cstdlib>
 
 using namespace std;
 
@@ -532,6 +533,11 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
     local_rnorm2 = squareNorm2(r);
     MPI_Allreduce(&local_rnorm2, &rnorm2, 1, MPI::DOUBLE, MPI::SUM, MPI::COMM_WORLD);
     rnorm2 = sqrt(abs(rnorm2));
+    const char* warm_trace = std::getenv("PUMA_WARM_TRACE");
+    if (my_id == 0 && warm_trace != NULL && string(warm_trace) == "1") {
+      ofs << "# initial_relative_residual " << rnorm2 / bnorm2 << endl;
+      ofs.flush();
+    }
     V(all, 0) = r/static_cast<T>(rnorm2);
     s = 0.0;
     s(0) = static_cast<T>(rnorm2);
