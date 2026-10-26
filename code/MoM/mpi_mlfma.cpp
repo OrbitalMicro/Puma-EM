@@ -20,6 +20,7 @@ using namespace std;
 #include "V_E_V_H.h"
 #include "mesh.h"
 #include "EMConstants.h"
+#include "rhs_cache.h"
 
 /****************************************************************************/
 /******************************* MLFMA matvec *******************************/
@@ -417,6 +418,11 @@ void computeForOneExcitation(Octtree & octtree,
   // excitation : V_CFIE computation
   blitz::Array<std::complex<float>, 1> V_CFIE(N_local_RWG);
   V_CFIE = 0.0;
+  const string RHS_MODE = readSingleLine(V_CFIE_DATA_PATH + "RHS_MODE.txt");
+  if (RHS_MODE != "legacy" && RHS_MODE != "read") {
+    cerr << "Unsupported RHS cache mode " << RHS_MODE << endl;
+    MPI_Abort(MPI_COMM_WORLD, 2);
+  }
   int DIPOLES_EXCITATION, PLANE_WAVE_EXCITATION, V_FULL_PRECISION;
   readIntFromASCIIFile(V_CFIE_DATA_PATH + "DIPOLES_EXCITATION.txt", DIPOLES_EXCITATION);
   readIntFromASCIIFile(V_CFIE_DATA_PATH + "PLANE_WAVE_EXCITATION.txt", PLANE_WAVE_EXCITATION);
@@ -425,7 +431,12 @@ void computeForOneExcitation(Octtree & octtree,
   blitz::Array<float, 1> r_phase_center(3);
   readFloatBlitzArray1DFromASCIIFile( V_CFIE_DATA_PATH + "r_phase_center.txt", r_phase_center);
 
-  if (DIPOLES_EXCITATION==1) {
+  if (RHS_MODE == "read") {
+    const string cache_path =
+        readSingleLine(V_CFIE_DATA_PATH + "RHS_CACHE_PATH.txt");
+    loadGlobalRHSCache(V_CFIE, cache_path, N_RWG, localRWGNumbers);
+  }
+  if (RHS_MODE != "read" && DIPOLES_EXCITATION==1) {
     blitz::Array<std::complex<double>, 2> J_dip, M_dip;
     blitz::Array<double, 2> r_J_dip, r_M_dip;
     int J_DIPOLES_EXCITATION, M_DIPOLES_EXCITATION;
@@ -454,7 +465,7 @@ void computeForOneExcitation(Octtree & octtree,
       V_CFIE += V_CFIE_tmp;
     }
   }
-  if (PLANE_WAVE_EXCITATION==1) {
+  if (RHS_MODE != "read" && PLANE_WAVE_EXCITATION==1) {
     double theta_inc, phi_inc;
     readDoubleFromASCIIFile(V_CFIE_DATA_PATH + "theta_inc.txt", theta_inc);
     readDoubleFromASCIIFile(V_CFIE_DATA_PATH + "phi_inc.txt", phi_inc);
