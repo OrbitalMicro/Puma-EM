@@ -1,0 +1,15 @@
+FROM v-band-puma:frob-bounded-rwg-20261016
+
+COPY code/MoM/mpi_mlfma.cpp /opt/puma-em/code/MoM/mpi_mlfma.cpp
+COPY code/MoM/warm_start.h /opt/puma-em/code/MoM/warm_start.h
+COPY code/MoM/iterative/iterative.h /opt/puma-em/code/MoM/iterative/iterative.h
+COPY run.sh /opt/puma-em/run.sh
+
+RUN cd /opt/puma-em/code/MoM \
+    && rm -f mpi_mlfma.o mpi_mlfma \
+    && make mpi_mlfma \
+    && chmod 755 /opt/puma-em/run.sh \
+    && sed -i \
+        '/^rm -rf ${SIMU_DIR} GMSHcommand.sh$/i /opt/save_rwg_coefficients.sh "${SIMU_DIR}" "${RESULT_DIR}"' \
+        /opt/puma-em/run.sh \
+    && test "$(grep -F -c '/opt/save_rwg_coefficients.sh' /opt/puma-em/run.sh)" -eq 1

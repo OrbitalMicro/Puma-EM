@@ -37,6 +37,10 @@ PYTHON_CMD="python"
 [ ! -e "${SIMU_DIR}" ] && mkdir -p ${SIMU_DIR}
 rm -rf ${SIMU_DIR}/tmp*
 rm -rf ${SIMU_DIR}/geo/*.msh* ${SIMU_DIR}/geo/*.txt  
+rm -f ${SIMU_DIR}/ZI_initial_complex64.bin
+if [ -f "${INPUT_DIR}/ZI_initial_complex64.bin" ]; then
+        cp "${INPUT_DIR}/ZI_initial_complex64.bin" "${SIMU_DIR}/ZI_initial_complex64.bin"
+fi
 mkdir -p ${SIMU_DIR}/result
 
 # JPA : debut de la partie qui sera redirigee vers le log
