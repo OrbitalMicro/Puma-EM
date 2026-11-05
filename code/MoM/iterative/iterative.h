@@ -346,7 +346,7 @@ void gmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
 
   blitz::Range all = blitz::Range::all();
   flag = 0;
-  iter = 0;
+  iter = 0; // total Krylov iterations, not the zero-based restart cycle
   const int N_local = x.extent(0), m = RESTRT; // size of the system
   // dimensions and other checks
   if (RESTRT < 1) {
@@ -371,7 +371,7 @@ void gmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
   blitz::Array<T, 1> cs(blitz::Range(1, m)), sn(blitz::Range(1, m)), s(m+1), wTmp(N_local), w(N_local), y;
   blitz::Array<T, 2> V(N_local, m+1), H(blitz::Range(1, m+1), blitz::Range(1, m+1));
 
-  for (iter=0 ; iter<MAXITER ; iter++) {
+  for (int cycle=0 ; cycle<MAXITER ; cycle++) {
     rTmp = b - matvec(x);
     r = psolve(rTmp);
     local_rnorm2 = squareNorm2(r);
@@ -385,6 +385,7 @@ void gmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
     H(1, m+1) = rnorm2;
 
     for (int jH=1 ; jH<m+1 ; ++jH){
+      iter++;
       // if preconditioning: w = M^(-1) * (A*V(all, jH))
       wTmp = matvec(V(all, jH-1));
       w = psolve(wTmp);
@@ -467,7 +468,7 @@ void gmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
       ofs.close();
       return;
     }
-  } // end for (iter =...)
+  } // end for (cycle =...)
 
   // bad ending...
   if (error>tol) {
@@ -503,7 +504,7 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
 
   blitz::Range all = blitz::Range::all();
   flag = 0;
-  iter = 0;
+  iter = 0; // total Krylov iterations, not the zero-based restart cycle
   const int N_local = x.extent(0), m = RESTRT; // size of the system
   // dimensions and other checks
   if (RESTRT < 1) {
@@ -528,13 +529,13 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
   blitz::Array<T, 1> cs(blitz::Range(1, m)), sn(blitz::Range(1, m)), s(m+1), wTmp(N_local), w(N_local), y;
   blitz::Array<T, 2> V(N_local, m+1), Z(N_local, m+1), H(blitz::Range(1, m+1), blitz::Range(1, m+1));
 
-  for (iter=0 ; iter<MAXITER ; iter++) {
+  for (int cycle=0 ; cycle<MAXITER ; cycle++) {
     r = b - matvec(x);
     local_rnorm2 = squareNorm2(r);
     MPI_Allreduce(&local_rnorm2, &rnorm2, 1, MPI::DOUBLE, MPI::SUM, MPI::COMM_WORLD);
     rnorm2 = sqrt(abs(rnorm2));
     const char* warm_trace = std::getenv("PUMA_WARM_TRACE");
-    if (my_id == 0 && warm_trace != NULL && string(warm_trace) == "1") {
+    if (cycle == 0 && my_id == 0 && warm_trace != NULL && string(warm_trace) == "1") {
       ofs << "# initial_relative_residual " << rnorm2 / bnorm2 << endl;
       ofs.flush();
     }
@@ -546,6 +547,7 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
     H(1, m+1) = rnorm2;
 
     for (int jH=1 ; jH<m+1 ; ++jH){
+      iter++;
       // if right preconditioning: z = M^-1 * V(all, jH)
       Z(all, jH-1) = psolve(V(all, jH-1));
       w = matvec(Z(all, jH-1));
@@ -628,7 +630,7 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
       ofs.close();
       return;
     }
-  } // end for (iter =...)
+  } // end for (cycle =...)
 
   // bad ending...
   if (error>tol) {

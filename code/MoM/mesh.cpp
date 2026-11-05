@@ -622,8 +622,8 @@ void RWGNumber_signedTriangles_computation(blitz::Array<int, 2>& RWGNumber_signe
   blitz::Array<int, 2> RWGNumber_signedTrianglesTmp(N_edges, 2);
   std::vector<std::vector<int> > RWGNumber_signedTrianglesTmp_1;
   std::vector<int> RWGNumber_edgeNumber; // needed for RWGNumber_edgeVertexes computation
+  int N_standard_RWGs = 0;
   RWGNumber_edgeNumber.reserve(N_edges);
-  for (int i=0 ; i<N_edges ; i++) RWGNumber_edgeNumber.push_back(i);
   // we now construct the RWGs. It will be done differently if we have a junction or not
   for (int i=0 ; i<N_edges ; i++) {
     std::vector<int> triangles;
@@ -633,9 +633,16 @@ void RWGNumber_signedTriangles_computation(blitz::Array<int, 2>& RWGNumber_signe
     }
     const unsigned int numberOfTriangles = triangles.size();
     // if (numberOfTriangles==2) we have a classic RWG
-    if (numberOfTriangles==2) {
-      RWGNumber_signedTrianglesTmp(i, 0) = triangles[0];
-      RWGNumber_signedTrianglesTmp(i, 1) = triangles[1];
+    if (numberOfTriangles==1) {
+      // Standard RWG discretization on an open PEC surface has no basis
+      // function on a boundary edge.
+      continue;
+    }
+    else if (numberOfTriangles==2) {
+      RWGNumber_signedTrianglesTmp(N_standard_RWGs, 0) = triangles[0];
+      RWGNumber_signedTrianglesTmp(N_standard_RWGs, 1) = triangles[1];
+      RWGNumber_edgeNumber.push_back(i);
+      N_standard_RWGs++;
     }
     else { // else we have a junction
       // we compute the edge unit vector: zHatEdge
@@ -713,26 +720,23 @@ void RWGNumber_signedTriangles_computation(blitz::Array<int, 2>& RWGNumber_signe
         }
       }
 
-      for (unsigned int j=1 ; j<possibleTrianglesPairsForRWGs.size() ; j++) {
+      for (unsigned int j=0 ; j<possibleTrianglesPairsForRWGs.size() ; j++) {
         RWGNumber_signedTrianglesTmp_1.push_back(possibleTrianglesPairsForRWGs[j]);
         RWGNumber_edgeNumber.push_back(i);
       }
-      // current line of RWGNumber_signedTrianglesTmp_1
-      RWGNumber_signedTrianglesTmp(i, 0) = possibleTrianglesPairsForRWGs[0][0];
-      RWGNumber_signedTrianglesTmp(i, 1) = possibleTrianglesPairsForRWGs[0][1];
     }
   }
   // we can finally construct the final RWGNumber_signedTriangles array
-  const int N_RWG = N_edges + RWGNumber_signedTrianglesTmp_1.size();
+  const int N_RWG = N_standard_RWGs + RWGNumber_signedTrianglesTmp_1.size();
   RWGNumber_signedTriangles.resize(N_RWG, 2);
   for (int i=0; i<N_RWG ; i++) {
-    if (i<N_edges) {
+    if (i<N_standard_RWGs) {
       RWGNumber_signedTriangles(i, 0) = RWGNumber_signedTrianglesTmp(i, 0);
       RWGNumber_signedTriangles(i, 1) = RWGNumber_signedTrianglesTmp(i, 1);
     }
     else {
-      RWGNumber_signedTriangles(i, 0) = RWGNumber_signedTrianglesTmp_1[i-N_edges][0];
-      RWGNumber_signedTriangles(i, 1) = RWGNumber_signedTrianglesTmp_1[i-N_edges][1];
+      RWGNumber_signedTriangles(i, 0) = RWGNumber_signedTrianglesTmp_1[i-N_standard_RWGs][0];
+      RWGNumber_signedTriangles(i, 1) = RWGNumber_signedTrianglesTmp_1[i-N_standard_RWGs][1];
     }
   }
   RWGNumber_signedTrianglesTmp_1.clear();
