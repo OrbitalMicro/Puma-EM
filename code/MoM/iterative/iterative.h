@@ -529,7 +529,7 @@ void fgmres(blitz::Array<T, 1>& x, /**< OUTPUT: converged solution */
   blitz::Array<T, 1> cs(blitz::Range(1, m)), sn(blitz::Range(1, m)), s(m+1), wTmp(N_local), w(N_local), y;
   blitz::Array<T, 2> V(N_local, m+1), Z(N_local, m+1), H(blitz::Range(1, m+1), blitz::Range(1, m+1));
 
-  for (iter=0 ; iter<MAXITER ; iter++) {
+  for (int cycle=0 ; cycle<MAXITER ; cycle++) {
     r = b - matvec(x);
     local_rnorm2 = squareNorm2(r);
     MPI_Allreduce(&local_rnorm2, &rnorm2, 1, MPI::DOUBLE, MPI::SUM, MPI::COMM_WORLD);
