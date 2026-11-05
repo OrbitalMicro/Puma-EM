@@ -101,6 +101,8 @@ ${PYTHON_CMD} code/RCS_MLFMA.py --inputdir ${INPUT_DIR} --simudir ${SIMU_DIR}
 # copying the result in the puma-em directory
 [ ! -e "${RESULT_DIR}" ] && mkdir -p ${RESULT_DIR}
 cp -r ${SIMU_DIR}/tmp0/iterative_data ${RESULT_DIR}
+test -s ${SIMU_DIR}/tmp0/ZI/ZI.txt
+cp ${SIMU_DIR}/tmp0/ZI/ZI.txt ${RESULT_DIR}/ZI_complex64.bin
 cp -r ${SIMU_DIR}/tmp0/octtree_data/big_cube_center_coord.txt ${RESULT_DIR}
 cp -r ${SIMU_DIR}/result/* ${RESULT_DIR}
 cp -r ${SIMU_DIR}/geo/*.geo ${RESULT_DIR} 2>/dev/null || true
@@ -119,4 +121,3 @@ do
 done
 
 exit 0
-

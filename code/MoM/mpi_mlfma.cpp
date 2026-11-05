@@ -677,6 +677,35 @@ void computeForOneExcitation(Octtree & octtree,
     cout << "Bad solver choice!! Solver is BICGSTAB or (F)GMRES, and you chose " << SOLVER << endl;
     exit(1);
   }
+
+  blitz::Array<std::complex<float>, 1> trueResidual(V_CFIE.shape());
+  trueResidual = V_CFIE - matvec(ZI);
+  double localResidualNorm2 = squareNorm2(trueResidual);
+  double globalResidualNorm2 = 0.0;
+  double localRhsNorm2 = squareNorm2(V_CFIE);
+  double globalRhsNorm2 = 0.0;
+  MPI_Allreduce(&localResidualNorm2, &globalResidualNorm2, 1, MPI::DOUBLE, MPI::SUM, MPI::COMM_WORLD);
+  MPI_Allreduce(&localRhsNorm2, &globalRhsNorm2, 1, MPI::DOUBLE, MPI::SUM, MPI::COMM_WORLD);
+  const double trueRelativeResidual =
+    sqrt(abs(globalResidualNorm2)) / sqrt(abs(globalRhsNorm2));
+  if (my_id==master) {
+    const string trueResidualFilename = RESULT_DATA_PATH + "true_residual.txt";
+    ofstream trueResidualFile(trueResidualFilename.c_str());
+    trueResidualFile.precision(17);
+    trueResidualFile << trueRelativeResidual << endl;
+    trueResidualFile.close();
+    cout << "true-relative-residual=" << trueRelativeResidual
+         << " krylov-iterations=" << iter << " solver-flag=" << flag << endl;
+  }
+  if ((flag!=0) || (!std::isfinite(error)) || (!std::isfinite(trueRelativeResidual))
+      || (error>TOL) || (trueRelativeResidual>TOL)) {
+    if (my_id==master) {
+      cerr << "Solver convergence gate failed: estimated=" << error
+           << " true=" << trueRelativeResidual << " tolerance=" << TOL
+           << " flag=" << flag << endl;
+    }
+    MPI_Abort(MPI_COMM_WORLD, 94);
+  }
   octtree.resizeSdownLevelsToZero();
 
   // now computing the E_field at the user-supplied r_obs
